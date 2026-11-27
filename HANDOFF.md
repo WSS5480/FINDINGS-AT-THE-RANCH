@@ -19,6 +19,7 @@ Antique shop website: owner posts items with phone photos; buyers browse, **Buy 
 - If two people pay for the same piece, the second order is flagged **needs refund** in Admin → Online Sales.
 
 ## Change log
+- 2026-11-27: Pages show "Loading…" + a visible error message instead of ever going blank (Steve saw a white screen right after first deploy; server/API checked fine).
 - 2026-11-27: Owner PIN optional — blank ADMIN_PIN opens /admin with no sign-in (Steve: "No pin right now").
 - 2026-11-27: v1 built. Shop, item pages (swipe gallery, zoom), offers/questions/holds, Stripe Buy Now, admin (dashboard tiles w/ drill-down, post/edit items w/ camera photos + reorder, offers inbox with call/text/email, online sales, shop settings).
 

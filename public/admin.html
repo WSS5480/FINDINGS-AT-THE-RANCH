@@ -58,10 +58,11 @@
   <a href="/admin" class="brand"><span class="mark">❦</span><span><b id="shopName">Shop Admin</b><small>Owner tools</small></span></a>
   <nav><a href="/" target="_blank">View site ↗</a><button id="out" hidden>Sign out</button></nav>
 </header>
-<main id="app"></main>
+<main id="app"><div class="empty">Loading…</div></main>
 <div class="toast" id="toast" hidden></div>
 
 <script>
+window.onerror=function(m){var a=document.getElementById('app');if(a)a.innerHTML='<div class="empty">Something went wrong loading this page. Pull down to refresh.<br><small>'+String(m).replace(/</g,'&lt;')+'</small></div>';};
 const $ = s => document.querySelector(s);
 const money = c => '$' + ((c || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: (c || 0) % 100 ? 2 : 0, maximumFractionDigits: 2 });
 const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));

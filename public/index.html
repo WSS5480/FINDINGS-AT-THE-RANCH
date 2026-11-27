@@ -14,7 +14,7 @@
   <nav><a href="#/">Shop</a><a href="#/about">Visit</a></nav>
 </header>
 
-<main id="app"></main>
+<main id="app"><div class="empty">Loading the shop…</div></main>
 
 <footer class="foot" id="foot"></footer>
 
@@ -23,6 +23,7 @@
 <div class="toast" id="toast" hidden></div>
 
 <script>
+window.onerror=function(m){var a=document.getElementById('app');if(a)a.innerHTML='<div class="empty">Something went wrong loading this page. Pull down to refresh.<br><small>'+String(m).replace(/</g,'&lt;')+'</small></div>';};
 const $ = s => document.querySelector(s);
 const money = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
 const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
