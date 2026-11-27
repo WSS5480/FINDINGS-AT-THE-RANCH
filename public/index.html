@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Antiques</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <a href="#/" class="brand"><span class="mark">❦</span><span><b id="shopName">Antiques</b><small id="tagline"></small></span></a>
+  <nav><a href="#/">Shop</a><a href="#/about">Visit</a></nav>
+</header>
+
+<main id="app"></main>
+
+<footer class="foot" id="foot"></footer>
+
+<div class="sheet-bg" id="sheetBg" hidden></div>
+<div class="sheet" id="sheet" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const money = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
+const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+let S = {}, ITEMS = [], filter = { cat: 'All', q: '', showSold: false };
+
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => t.hidden = true, 3500); }
+async function api(url, opts = {}) {
+  const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Something went wrong');
+  return j;
+}
+const telHref = p => 'tel:' + String(p).replace(/[^0-9+]/g, '');
+const smsHref = (p, body) => 'sms:' + String(p).replace(/[^0-9+]/g, '') + '?&body=' + encodeURIComponent(body);
+
+async function boot() {
+  S = await api('/api/settings');
+  document.title = S.shop_name;
+  $('#shopName').textContent = S.shop_name;
+  $('#tagline').textContent = S.tagline;
+  $('#foot').innerHTML = `<div><b>${esc(S.shop_name)}</b></div>
+    ${S.address ? `<div>${esc(S.address)}</div>` : ''}${S.hours ? `<div>${esc(S.hours)}</div>` : ''}
+    <div class="foot-links">${S.phone ? `<a href="${telHref(S.phone)}">${esc(S.phone)}</a>` : ''}${S.email ? `<a href="mailto:${esc(S.email)}">${esc(S.email)}</a>` : ''}</div>`;
+  const paid = new URLSearchParams(location.search).get('paid');
+  if (paid) {
+    try { await api('/api/checkout-confirm', { method: 'POST', body: JSON.stringify({ session: paid }) });
+      history.replaceState(null, '', '/' + location.hash);
+      showThanks();
+    } catch (e) { toast(e.message); }
+  }
+  ITEMS = await api('/api/items');
+  route();
+}
+window.addEventListener('hashchange', route);
+
+function route() {
+  const h = location.hash.replace(/^#/, '') || '/';
+  window.scrollTo(0, 0);
+  if (h.startsWith('/item/')) return itemPage(+h.split('/')[2]);
+  if (h === '/about') return aboutPage();
+  shopPage();
+}
+
+function cats() {
+  const used = new Set(ITEMS.map(i => i.category).filter(Boolean));
+  const list = (S.categories || '').split(',').map(s => s.trim()).filter(c => used.has(c));
+  used.forEach(c => { if (!list.includes(c)) list.push(c); });
+  return ['All', ...list];
+}
+
+function card(it) {
+  const pid = it.photo_ids[0];
+  const badge = it.status === 'sold' ? '<span class="badge sold">Sold</span>' : it.status === 'hold' ? '<span class="badge hold">On hold</span>' : it.featured ? '<span class="badge feat">Featured</span>' : '';
+  return `<a class="card ${it.status}" href="#/item/${it.id}">
+    <div class="ph">${pid ? `<img loading="lazy" src="/photo/${pid}?t=1" alt="${esc(it.title)}">` : '<div class="noph">❦</div>'}${badge}</div>
+    <div class="cb"><div class="ct">${esc(it.title)}</div>
+    <div class="cm">${esc([it.era, it.category].filter(Boolean).join(' · '))}</div>
+    <div class="cp">${it.status === 'sold' ? 'Sold' : money(it.price_cents)}</div></div></a>`;
+}
+
+function shopPage() {
+  const list = ITEMS.filter(i => (filter.showSold || i.status !== 'sold')
+    && (filter.cat === 'All' || i.category === filter.cat)
+    && (!filter.q || (i.title + ' ' + i.description + ' ' + i.era + ' ' + i.category).toLowerCase().includes(filter.q.toLowerCase())));
+  const soldCount = ITEMS.filter(i => i.status === 'sold').length;
+  $('#app').innerHTML = `
+    <section class="hero"><h1>${esc(S.tagline || S.shop_name)}</h1><p>${esc(S.about)}</p></section>
+    <div class="tools">
+      <input id="q" type="search" placeholder="Search the shop…" value="${esc(filter.q)}">
+      <select id="cat">${cats().map(c => `<option ${c === filter.cat ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+    </div>
+    <div class="chips">${cats().map(c => `<button class="chip ${c === filter.cat ? 'on' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+    <div class="count">${list.length} piece${list.length === 1 ? '' : 's'}${filter.cat !== 'All' ? ' in ' + esc(filter.cat) : ''}</div>
+    <div class="grid">${list.map(card).join('') || '<div class="empty">Nothing here yet — check back soon. New finds come in every week.</div>'}</div>
+    ${soldCount ? `<div class="center"><button class="link" id="soldT">${filter.showSold ? 'Hide' : 'Show'} recently sold (${soldCount})</button></div>` : ''}`;
+  $('#q').oninput = e => { filter.q = e.target.value; clearTimeout(window._qt); window._qt = setTimeout(() => { shopPage(); const i = $('#q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
+  $('#cat').onchange = e => { filter.cat = e.target.value; shopPage(); };
+  document.querySelectorAll('.chip').forEach(b => b.onclick = () => { filter.cat = b.dataset.c; shopPage(); });
+  if ($('#soldT')) $('#soldT').onclick = () => { filter.showSold = !filter.showSold; shopPage(); };
+}
+
+function itemPage(id) {
+  const it = ITEMS.find(i => i.id === id);
+  if (!it) { $('#app').innerHTML = '<div class="empty">That piece isn\'t listed anymore. <a href="#/">Back to the shop</a></div>'; return; }
+  const ph = it.photo_ids;
+  const avail = it.status === 'available';
+  const facts = [['Era', it.era], ['Condition', it.condition], ['Size', it.dimensions], ['Category', it.category], ['Item #', it.id]].filter(f => f[1]);
+  $('#app').innerHTML = `
+    <a class="back" href="#/">‹ Back to the shop</a>
+    <div class="item">
+      <div class="gallery">
+        <div class="main">${ph[0] ? `<img id="mainImg" src="/photo/${ph[0]}" alt="${esc(it.title)}">` : '<div class="noph big">❦</div>'}
+          ${ph.length > 1 ? '<button class="nav prev" id="prev">‹</button><button class="nav next" id="next">›</button>' : ''}</div>
+        ${ph.length > 1 ? `<div class="thumbs">${ph.map((p, i) => `<img src="/photo/${p}?t=1" data-i="${i}" class="${i ? '' : 'on'}">`).join('')}</div>` : ''}
+      </div>
+      <div class="info">
+        <h1>${esc(it.title)}</h1>
+        <div class="price">${it.status === 'sold' ? 'Sold' : money(it.price_cents)}${it.status === 'hold' ? ' <span class="badge hold inline">On hold</span>' : ''}</div>
+        <div class="facts">${facts.map(f => `<div><span>${f[0]}</span><b>${esc(f[1])}</b></div>`).join('')}</div>
+        <p class="desc">${esc(it.description).replace(/\n/g, '<br>')}</p>
+        <div class="actions">
+          ${avail && S.stripe_enabled ? `<button class="btn primary" id="buy">Buy Now · ${money(it.price_cents)}</button>` : ''}
+          ${avail && it.accept_offers ? '<button class="btn" id="offer">Make an Offer</button>' : ''}
+          ${it.status !== 'sold' ? '<button class="btn" id="ask">Ask a Question</button>' : '<button class="btn" id="ask">Find me something similar</button>'}
+          ${avail ? '<button class="btn ghost" id="hold">Hold it for pickup</button>' : ''}
+        </div>
+        ${S.phone ? `<div class="quick"><a href="${telHref(S.phone)}">📞 Call</a><a href="${smsHref(S.phone, `Hi! I'm interested in "${it.title}" (Item #${it.id}) — ${location.origin}/#/item/${it.id}`)}">💬 Text us</a><button class="link" id="share">↗ Share</button></div>` : `<div class="quick"><button class="link" id="share">↗ Share</button></div>`}
+        <p class="note">${esc(S.pickup_note)}</p>
+      </div>
+    </div>`;
+  let cur = 0;
+  const show = i => { cur = (i + ph.length) % ph.length; $('#mainImg').src = '/photo/' + ph[cur]; document.querySelectorAll('.thumbs img').forEach((t, k) => t.classList.toggle('on', k === cur)); };
+  document.querySelectorAll('.thumbs img').forEach(t => t.onclick = () => show(+t.dataset.i));
+  if ($('#prev')) { $('#prev').onclick = () => show(cur - 1); $('#next').onclick = () => show(cur + 1); }
+  const main = $('.main'); let sx = null;
+  main.addEventListener('touchstart', e => sx = e.touches[0].clientX, { passive: true });
+  main.addEventListener('touchend', e => { if (sx == null || ph.length < 2) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 40) show(cur + (dx < 0 ? 1 : -1)); sx = null; });
+  if ($('#mainImg')) $('#mainImg').onclick = () => openZoom(ph, cur);
+  if ($('#buy')) $('#buy').onclick = async e => { e.target.disabled = true; e.target.textContent = 'Opening secure checkout…';
+    try { const r = await api('/api/checkout/' + it.id, { method: 'POST' }); location.href = r.url; } catch (er) { toast(er.message); e.target.disabled = false; e.target.textContent = 'Buy Now · ' + money(it.price_cents); } };
+  if ($('#offer')) $('#offer').onclick = () => form(it, 'offer');
+  if ($('#ask')) $('#ask').onclick = () => form(it, 'question');
+  if ($('#hold')) $('#hold').onclick = () => form(it, 'hold');
+  $('#share').onclick = async () => { const url = location.origin + '/#/item/' + it.id;
+    if (navigator.share) navigator.share({ title: it.title, url }).catch(() => {}); else { await navigator.clipboard.writeText(url); toast('Link copied'); } };
+}
+
+function openSheet(html) { $('#sheet').innerHTML = html; $('#sheet').hidden = $('#sheetBg').hidden = false; }
+function closeSheet() { $('#sheet').hidden = $('#sheetBg').hidden = true; }
+$('#sheetBg').onclick = closeSheet;
+
+function openZoom(ph, i) {
+  openSheet(`<div class="zoom"><img src="/photo/${ph[i]}"><button class="btn" onclick="closeSheet()">Close</button></div>`);
+}
+
+function form(it, kind) {
+  const title = { offer: 'Make an offer', question: it.status === 'sold' ? 'Find me something similar' : 'Ask a question', hold: 'Hold it for pickup' }[kind];
+  openSheet(`<h2>${title}</h2><div class="sub">${esc(it.title)} · ${it.status === 'sold' ? 'Sold' : money(it.price_cents)}</div>
+    <form id="f">
+      ${kind === 'offer' ? '<label>Your offer<input name="offer" inputmode="decimal" placeholder="$" required></label>' : ''}
+      <label>Name<input name="name" autocomplete="name" required></label>
+      <label>Phone<input name="phone" type="tel" autocomplete="tel"></label>
+      <label>Email<input name="email" type="email" autocomplete="email"></label>
+      <label>${kind === 'hold' ? 'When can you pick it up?' : 'Message'}<textarea name="message" rows="3" placeholder="${kind === 'hold' ? 'e.g. Saturday morning' : kind === 'offer' ? 'Optional' : ''}"></textarea></label>
+      <div class="row"><button type="button" class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn primary">Send</button></div>
+      <p class="note">Phone or email so we can get back to you. We usually reply the same day.</p>
+    </form>`);
+  $('#f').onsubmit = async e => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target));
+    try { await api('/api/inquiries', { method: 'POST', body: JSON.stringify({ ...d, kind, item_id: it.id }) });
+      openSheet(`<h2>Got it — thank you!</h2><p>We'll reach out shortly about <b>${esc(it.title)}</b>.</p><button class="btn primary" onclick="closeSheet()">Keep browsing</button>`);
+    } catch (er) { toast(er.message); }
+  };
+}
+
+function showThanks() {
+  openSheet(`<h2>Thank you for your purchase!</h2><p>Your payment went through and the piece is yours. We'll contact you shortly to arrange pickup or shipping.</p><button class="btn primary" onclick="closeSheet()">Done</button>`);
+}
+
+function aboutPage() {
+  $('#app').innerHTML = `<a class="back" href="#/">‹ Back to the shop</a><section class="about">
+    <h1>${esc(S.shop_name)}</h1><p>${esc(S.about).replace(/\n/g, '<br>')}</p>
+    ${S.address ? `<h3>Visit</h3><p>${esc(S.address)}<br><a href="https://maps.google.com/?q=${encodeURIComponent(S.address)}" target="_blank" rel="noopener">Get directions ›</a></p>` : ''}
+    ${S.hours ? `<h3>Hours</h3><p>${esc(S.hours).replace(/\n/g, '<br>')}</p>` : ''}
+    <h3>Pickup & shipping</h3><p>${esc(S.pickup_note)}</p>
+    <div class="actions">${S.phone ? `<a class="btn primary" href="${telHref(S.phone)}">Call ${esc(S.phone)}</a>` : ''}${S.email ? `<a class="btn" href="mailto:${esc(S.email)}">Email us</a>` : ''}</div></section>`;
+}
+
+boot().catch(e => { $('#app').innerHTML = '<div class="empty">Couldn\'t load the shop. Please refresh.</div>'; console.error(e); });
+</script>
+</body>
+</html>
