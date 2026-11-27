@@ -25,6 +25,7 @@ Antique shop website + ranch hunt booking. Owner posts items with phone photos; 
 - If two people pay for the same piece, the second order is flagged **needs refund** in Admin → Online Sales.
 
 ## Change log
+- 2026-11-27: 🔒 Admin button in the site header; owner PIN set to 0000 in Render (ADMIN_PIN) for now, per Steve.
 - 2026-11-27: Catchy landing page (sunset ranch hero, polaroid photos of real listings, ticker, Just Found, Shop by Treasure, How it works, story + stats, final CTA). Shop moved to #/shop.
 - 2026-11-27: Book a Hunt — public hunts page with open dates + booking request form; admin to add hunts/dates/spots and manage bookings.
 - 2026-11-27: Pages show "Loading…" + a visible error message instead of ever going blank (Steve saw a white screen right after first deploy; server/API checked fine).
@@ -32,6 +33,7 @@ Antique shop website + ranch hunt booking. Owner posts items with phone photos; 
 - 2026-11-27: v1 built. Shop, item pages (swipe gallery, zoom), offers/questions/holds, Stripe Buy Now, admin (dashboard tiles w/ drill-down, post/edit items w/ camera photos + reorder, offers inbox with call/text/email, online sales, shop settings).
 
 ## Decisions
+- 2026-11-27: PIN back on — 0000 for now (Steve). Change it before the site is promoted.
 - 2026-11-27: Steve asked for a catchy landing page and a Book a Hunt page with admin for hunt dates. Hunts are request-to-book (no payment) since Stripe isn't on yet.
 - 2026-11-27: No PIN for now, no Stripe yet (Steve). Buy Now stays hidden until STRIPE_SECRET_KEY is set. Add a PIN before sharing the site widely — /admin is open to anyone who finds it.
 - 2026-11-27: Render app (Steve chose over a quick page). Checkout = both Buy Now + offers (Steve). Name "Findings at the Ranch" (Steve).
@@ -47,5 +49,5 @@ Antique shop website + ranch hunt booking. Owner posts items with phone photos; 
 ## Open items
 - Steve pastes the DB's Internal Database URL into the service as DATABASE_URL (Render API doesn't expose the password).
 - Stripe key for Buy Now (later, per Steve).
-- Turn the PIN back on before going public.
+- Change the 0000 PIN to a real one before promoting the site.
 - Optional: email/text alert to owner when an offer comes in; custom domain.

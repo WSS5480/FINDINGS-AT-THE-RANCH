@@ -192,3 +192,6 @@ html,body{overflow-x:hidden}
 .date.focus{box-shadow:0 0 0 3px var(--brass)}
 .hunt-rules{background:var(--paper);border:1px dashed var(--brass);border-radius:var(--r);padding:16px 18px;margin-bottom:20px}
 .hunt-rules p{margin:4px 0 0;color:var(--muted)}
+
+.top nav{flex-wrap:wrap;justify-content:flex-end;row-gap:4px}
+.top nav a.adm{border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:13px;background:var(--paper)}
