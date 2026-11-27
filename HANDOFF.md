@@ -24,9 +24,15 @@ Antique shop website: owner posts items with phone photos; buyers browse, **Buy 
 ## Decisions
 - 2026-11-27: Render app (Steve chose over a quick page). Checkout = both Buy Now + offers (Steve). Name "Findings at the Ranch" (Steve).
 - 2026-11-27: Photos stored in Postgres (no extra storage account needed); resized client-side to keep DB small.
+- 2026-11-27: Own repo FINDINGS-AT-THE-RANCH (Steve created it); Render MY APPS workspace, ohio.
 - 2026-11-27: Stripe via REST (no SDK), verified on success page — no webhook needed for v1.
 
+## Where it lives
+- Repo: WSS5480/FINDINGS-AT-THE-RANCH (main auto-deploys)
+- Render MY APPS: web service findings-at-the-ranch (srv-dc4j6849v7es73f64350, ohio, 0.5c-512mb) → https://findings-at-the-ranch.onrender.com
+- Postgres: findings-at-the-ranch-db (dpg-dc4j63vf3r2c73bj0v90-a, basic_256mb, ohio)
+
 ## Open items
-- GitHub repo + Render service + Postgres (waiting on repo).
+- Steve pastes the DB's Internal Database URL into the service as DATABASE_URL (Render API doesn't expose the password).
 - Stripe key for Buy Now.
 - Optional: email/text alert to owner when an offer comes in; custom domain.
