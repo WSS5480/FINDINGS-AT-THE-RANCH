@@ -17,6 +17,8 @@ const DEFAULT_SETTINGS = {
   phone: '', email: '', address: '', hours: '',
   about: 'Hand-picked antiques, vintage furniture and collectibles. Every piece is one of a kind — when it\'s gone, it\'s gone.',
   pickup_note: 'Local pickup available. Shipping on smaller items — we\'ll contact you after purchase to arrange.',
+  hunt_intro: 'Guided and self-guided hunts on private ranch land. Pick your dates, tell us about your party, and we\'ll confirm your spot.',
+  hunt_rules: 'Valid Texas hunting license required. Deposit holds your dates; balance due on arrival. Weather and season dates may change hunts — we\'ll work with you.',
   categories: 'Furniture,Lighting,Glass & China,Decor,Jewelry,Collectibles,Art,Tools & Primitives',
 };
 
@@ -38,6 +40,18 @@ async function init() {
     id SERIAL PRIMARY KEY, item_id INT REFERENCES items(id) ON DELETE SET NULL, stripe_session TEXT UNIQUE,
     amount_cents INT, name TEXT, email TEXT, phone TEXT, address TEXT, status TEXT DEFAULT 'paid',
     note TEXT, created_at TIMESTAMPTZ DEFAULT now())`);
+
+  await q(`CREATE TABLE IF NOT EXISTS hunts (
+    id SERIAL PRIMARY KEY, title TEXT NOT NULL, game TEXT DEFAULT '', description TEXT DEFAULT '', includes TEXT DEFAULT '',
+    price_cents INT DEFAULT 0, price_unit TEXT DEFAULT 'per hunter', deposit_cents INT DEFAULT 0, max_party INT DEFAULT 4,
+    active BOOLEAN DEFAULT true, photo BYTEA, thumb BYTEA, created_at TIMESTAMPTZ DEFAULT now())`);
+  await q(`CREATE TABLE IF NOT EXISTS hunt_dates (
+    id SERIAL PRIMARY KEY, hunt_id INT REFERENCES hunts(id) ON DELETE CASCADE, start_date DATE NOT NULL, end_date DATE,
+    spots INT NOT NULL DEFAULT 4, note TEXT DEFAULT '', closed BOOLEAN DEFAULT false)`);
+  await q(`CREATE TABLE IF NOT EXISTS hunt_bookings (
+    id SERIAL PRIMARY KEY, hunt_date_id INT REFERENCES hunt_dates(id) ON DELETE SET NULL, hunt_id INT REFERENCES hunts(id) ON DELETE SET NULL,
+    name TEXT, phone TEXT, email TEXT, party_size INT DEFAULT 1, message TEXT, status TEXT DEFAULT 'new',
+    date_label TEXT, created_at TIMESTAMPTZ DEFAULT now())`);
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
     await q(`INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING`, [k, v]);
   }
@@ -172,7 +186,10 @@ app.get('/api/admin/summary', admin, wrap(async (req, res) => {
     (SELECT COALESCE(sum(price_cents),0) FROM items WHERE status IN ('available','hold'))::int AS inventory_value,
     (SELECT COALESCE(sum(sold_price_cents),0) FROM items WHERE status='sold')::int AS sales_total,
     (SELECT count(*) FROM inquiries WHERE status='new')::int AS new_inquiries,
-    (SELECT count(*) FROM orders)::int AS orders`);
+    (SELECT count(*) FROM orders)::int AS orders,
+    (SELECT count(*) FROM hunt_bookings WHERE status='new')::int AS hunt_new,
+    (SELECT COALESCE(sum(b.party_size),0) FROM hunt_bookings b JOIN hunt_dates d ON d.id=b.hunt_date_id WHERE b.status='confirmed' AND COALESCE(d.end_date,d.start_date) >= CURRENT_DATE)::int AS hunt_upcoming,
+    (SELECT count(*) FROM hunt_dates WHERE COALESCE(end_date,start_date) >= CURRENT_DATE AND NOT closed)::int AS hunt_open_dates`);
   res.json(r.rows[0]);
 }));
 
@@ -258,6 +275,77 @@ app.put('/api/admin/settings', admin, wrap(async (req, res) => {
   }
   res.json(await getSettings());
 }));
+
+// ---------- hunts ----------
+// spots taken = new + confirmed requests (declined/cancelled free the spots)
+const DATE_COLS = `d.id,d.hunt_id,to_char(d.start_date,'YYYY-MM-DD') AS start_date,to_char(d.end_date,'YYYY-MM-DD') AS end_date,d.spots,d.note,d.closed,
+  COALESCE((SELECT sum(b.party_size) FROM hunt_bookings b WHERE b.hunt_date_id=d.id AND b.status IN ('new','confirmed')),0)::int AS taken`;
+const HUNT_COLS = `h.id,h.title,h.game,h.description,h.includes,h.price_cents,h.price_unit,h.deposit_cents,h.max_party,h.active,(h.photo IS NOT NULL) AS has_photo`;
+
+async function huntList(adminView) {
+  const hs = (await q(`SELECT ${HUNT_COLS} FROM hunts h ${adminView ? '' : 'WHERE h.active'} ORDER BY h.created_at`)).rows;
+  const ds = (await q(`SELECT ${DATE_COLS} FROM hunt_dates d ${adminView ? '' : 'WHERE COALESCE(d.end_date,d.start_date) >= CURRENT_DATE AND NOT d.closed'} ORDER BY d.start_date`)).rows;
+  hs.forEach(h => { h.dates = ds.filter(d => d.hunt_id === h.id).map(d => ({ ...d, left: Math.max(0, d.spots - d.taken) })); });
+  return hs;
+}
+app.get('/api/hunts', wrap(async (req, res) => res.json(await huntList(false))));
+app.get('/hunt-photo/:id', wrap(async (req, res) => {
+  const r = await q(`SELECT ${req.query.t ? 'thumb' : 'photo'} AS b FROM hunts WHERE id=$1`, [req.params.id]);
+  if (!r.rows[0] || !r.rows[0].b) return res.status(404).end();
+  res.set('Content-Type', 'image/jpeg').set('Cache-Control', 'public, max-age=300').send(r.rows[0].b);
+}));
+app.post('/api/hunt-bookings', wrap(async (req, res) => {
+  const b = req.body || {};
+  if (!clean(b.name) || (!clean(b.phone) && !clean(b.email))) return res.status(400).json({ error: 'Name and a phone or email, please.' });
+  const d = (await q(`SELECT ${DATE_COLS}, h.title, h.max_party, h.active FROM hunt_dates d JOIN hunts h ON h.id=d.hunt_id WHERE d.id=$1`, [b.hunt_date_id])).rows[0];
+  if (!d || !d.active || d.closed) return res.status(400).json({ error: 'Those dates are no longer open.' });
+  const party = Math.max(1, Math.min(parseInt(b.party_size, 10) || 1, d.max_party || 50));
+  const left = d.spots - d.taken;
+  if (party > left) return res.status(400).json({ error: left > 0 ? `Only ${left} spot${left === 1 ? '' : 's'} left on those dates.` : 'Those dates just filled up — pick another.' });
+  const label = d.start_date + (d.end_date && d.end_date !== d.start_date ? ' to ' + d.end_date : '');
+  await q(`INSERT INTO hunt_bookings(hunt_date_id,hunt_id,name,phone,email,party_size,message,date_label) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [d.id, d.hunt_id, clean(b.name, 120), clean(b.phone, 40), clean(b.email, 160), party, clean(b.message), label]);
+  res.json({ ok: true });
+}));
+
+app.get('/api/admin/hunts', admin, wrap(async (req, res) => res.json(await huntList(true))));
+function huntFields(b) {
+  return [clean(b.title, 200) || 'Hunt', clean(b.game, 120), clean(b.description, 5000), clean(b.includes, 2000), cents(b.price),
+    ['per hunter', 'per group', 'per day', 'per hunter / day'].includes(b.price_unit) ? b.price_unit : 'per hunter', cents(b.deposit),
+    Math.max(1, parseInt(b.max_party, 10) || 4), b.active !== false];
+}
+async function saveHuntExtras(id, b) {
+  if (b.photo && b.photo.data && b.photo.thumb) await q(`UPDATE hunts SET photo=$2, thumb=$3 WHERE id=$1`, [id, b64(b.photo.data), b64(b.photo.thumb)]);
+  if (b.remove_photo) await q(`UPDATE hunts SET photo=NULL, thumb=NULL WHERE id=$1`, [id]);
+  if (Array.isArray(b.dates)) {
+    const keep = b.dates.filter(d => d.id).map(d => +d.id);
+    await q(`DELETE FROM hunt_dates WHERE hunt_id=$1 AND NOT (id = ANY($2::int[]))`, [id, keep]);
+    for (const d of b.dates) {
+      if (!d.start_date) continue;
+      const v = [d.start_date, d.end_date || null, Math.max(1, parseInt(d.spots, 10) || 1), clean(d.note, 200), !!d.closed];
+      if (d.id) await q(`UPDATE hunt_dates SET start_date=$1,end_date=$2,spots=$3,note=$4,closed=$5 WHERE id=$6 AND hunt_id=$7`, [...v, d.id, id]);
+      else await q(`INSERT INTO hunt_dates(start_date,end_date,spots,note,closed,hunt_id) VALUES($1,$2,$3,$4,$5,$6)`, [...v, id]);
+    }
+  }
+}
+app.post('/api/admin/hunts', admin, wrap(async (req, res) => {
+  const r = await q(`INSERT INTO hunts(title,game,description,includes,price_cents,price_unit,deposit_cents,max_party,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, huntFields(req.body));
+  await saveHuntExtras(r.rows[0].id, req.body); res.json({ id: r.rows[0].id });
+}));
+app.put('/api/admin/hunts/:id', admin, wrap(async (req, res) => {
+  await q(`UPDATE hunts SET title=$1,game=$2,description=$3,includes=$4,price_cents=$5,price_unit=$6,deposit_cents=$7,max_party=$8,active=$9 WHERE id=$10`, [...huntFields(req.body), req.params.id]);
+  await saveHuntExtras(req.params.id, req.body); res.json({ ok: true });
+}));
+app.delete('/api/admin/hunts/:id', admin, wrap(async (req, res) => { await q(`DELETE FROM hunts WHERE id=$1`, [req.params.id]); res.json({ ok: true }); }));
+app.get('/api/admin/hunt-bookings', admin, wrap(async (req, res) => {
+  res.json((await q(`SELECT b.*, h.title AS hunt_title, h.price_cents, h.price_unit, h.deposit_cents FROM hunt_bookings b LEFT JOIN hunts h ON h.id=b.hunt_id
+    ORDER BY (b.status='new') DESC, b.created_at DESC`)).rows);
+}));
+app.put('/api/admin/hunt-bookings/:id', admin, wrap(async (req, res) => {
+  const st = ['new', 'confirmed', 'declined', 'cancelled'].includes(req.body?.status) ? req.body.status : 'new';
+  await q(`UPDATE hunt_bookings SET status=$1 WHERE id=$2`, [st, req.params.id]); res.json({ ok: true });
+}));
+app.delete('/api/admin/hunt-bookings/:id', admin, wrap(async (req, res) => { await q(`DELETE FROM hunt_bookings WHERE id=$1`, [req.params.id]); res.json({ ok: true }); }));
 
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 

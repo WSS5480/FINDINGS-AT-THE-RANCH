@@ -48,6 +48,9 @@
 .pt .mv button{border:0;border-radius:6px;background:rgba(255,253,248,.92);font-size:12px;padding:2px 6px;cursor:pointer}
 .pt .cv{position:absolute;top:4px;left:4px;background:var(--brass);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px}
 .addph{width:96px;height:96px;border:2px dashed var(--brass);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--brass);font-weight:600;font-size:13px;cursor:pointer;background:#fffaf0;text-align:center}
+.two>label{min-width:0}
+.ed input[type=date]{min-width:0;-webkit-appearance:none;appearance:none}
+.drow{min-width:0}
 .check{display:flex!important;align-items:center;gap:8px}.check input{width:auto;margin:0}
 .login{max-width:360px;margin:12vh auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:26px;text-align:center}
 .login input{width:100%;padding:14px;border:1px solid var(--line);border-radius:10px;font-size:22px;text-align:center;letter-spacing:.3em;margin:14px 0}
@@ -107,9 +110,9 @@ function back() { view = stack.pop() || { tab: 'dash' }; render(); }
 const backBtn = () => stack.length ? '<button class="mini" onclick="back()">‹ Back</button>' : '';
 
 async function tabsBar() {
-  let n = 0; try { n = (await api('/api/admin/summary')).new_inquiries; } catch (e) {}
-  const t = [['dash', 'Dashboard'], ['items', 'Items'], ['inq', 'Offers & Questions'], ['orders', 'Online Sales'], ['settings', 'Shop Settings']];
-  return `<div class="tabs">${t.map(([k, l]) => `<button class="${view.tab === k ? 'on' : ''}" onclick="go({tab:'${k}'},true)">${l}${k === 'inq' && n ? `<span class="dot">${n}</span>` : ''}</button>`).join('')}</div>`;
+  let n = 0, hn = 0; try { const sm = await api('/api/admin/summary'); n = sm.new_inquiries; hn = sm.hunt_new; } catch (e) {}
+  const t = [['dash', 'Dashboard'], ['items', 'Items'], ['inq', 'Offers & Questions'], ['hb', 'Hunt Bookings'], ['hunts', 'Hunts & Dates'], ['orders', 'Online Sales'], ['settings', 'Shop Settings']];
+  return `<div class="tabs">${t.map(([k, l]) => `<button class="${view.tab === k ? 'on' : ''}" onclick="go({tab:'${k}'},true)">${l}${k === 'inq' && n ? `<span class="dot">${n}</span>` : ''}${k === 'hb' && hn ? `<span class="dot">${hn}</span>` : ''}</button>`).join('')}</div>`;
 }
 
 async function render() {
@@ -119,6 +122,8 @@ async function render() {
   if (v.tab === 'items') return v.edit !== undefined ? editor(bar, v.edit) : items(bar, v.status || 'all');
   if (v.tab === 'inq') return inquiries(bar, v.status || 'open');
   if (v.tab === 'orders') return orders(bar);
+  if (v.tab === 'hb') return huntBookings(bar, v.status || 'open', v.date);
+  if (v.tab === 'hunts') return v.edit !== undefined ? huntEditor(bar, v.edit) : huntsAdmin(bar);
   if (v.tab === 'settings') return settings(bar);
 }
 
@@ -126,13 +131,16 @@ async function dash(bar) {
   const s = await api('/api/admin/summary');
   const tile = (label, val, sub, nav) => `<button class="tile" onclick='go(${JSON.stringify(nav)})'><span>${label}</span><b>${val}</b><small>${sub}</small></button>`;
   $('#app').innerHTML = bar + `
-    <button class="btn primary big-add" onclick="go({tab:'items',edit:0})">📷 Post a new item</button>
+    <div class="row" style="margin:16px 0"><button class="btn primary" style="flex-basis:auto" onclick="go({tab:'items',edit:0})">📷 Post a new item</button><button class="btn" style="flex-basis:auto" onclick="go({tab:'hunts',edit:0})">🦌 Add a hunt</button></div>
     <div class="tiles">
       ${tile('For sale', s.available, money(s.inventory_value) + ' listed', { tab: 'items', status: 'available' })}
       ${tile('On hold', s.hold, 'held for buyers', { tab: 'items', status: 'hold' })}
       ${tile('Sold', s.sold, money(s.sales_total) + ' total', { tab: 'items', status: 'sold' })}
       ${tile('New messages', s.new_inquiries, 'offers & questions', { tab: 'inq', status: 'new' })}
       ${tile('Online sales', s.orders, 'paid by card', { tab: 'orders' })}
+      ${tile('Hunt requests', s.hunt_new, 'new — call to confirm', { tab: 'hb', status: 'new' })}
+      ${tile('Hunters booked', s.hunt_upcoming, 'confirmed, upcoming', { tab: 'hb', status: 'confirmed' })}
+      ${tile('Open hunt dates', s.hunt_open_dates, 'taking bookings', { tab: 'hunts' })}
       ${s.hidden ? tile('Hidden', s.hidden, 'not on site', { tab: 'items', status: 'hidden' }) : ''}
     </div>
     ${S.stripe_enabled ? '' : '<p class="note" style="margin-top:16px">Buy Now is off until STRIPE_SECRET_KEY is set in Render. Offers & questions work now.</p>'}`;
@@ -288,7 +296,7 @@ async function orders(bar) {
 async function ordSet(id, status) { await api('/api/admin/orders/' + id, { method: 'PUT', body: JSON.stringify({ status }) }); render(); }
 
 async function settings(bar) {
-  const f = [['shop_name', 'Shop name'], ['tagline', 'Tagline (big headline on the home page)'], ['phone', 'Phone (for Call / Text buttons)'], ['email', 'Email'], ['address', 'Address'], ['hours', 'Hours', 1], ['about', 'About the shop', 1], ['pickup_note', 'Pickup & shipping note', 1], ['categories', 'Categories (comma separated)', 1]];
+  const f = [['shop_name', 'Shop name'], ['tagline', 'Tagline (big headline on the home page)'], ['phone', 'Phone (for Call / Text buttons)'], ['email', 'Email'], ['address', 'Address'], ['hours', 'Hours', 1], ['about', 'About the shop', 1], ['pickup_note', 'Pickup & shipping note', 1], ['hunt_intro', 'Hunts — intro text', 1], ['hunt_rules', 'Hunts — rules / good to know', 1], ['categories', 'Categories (comma separated)', 1]];
   $('#app').innerHTML = bar + `<div class="crumb">${backBtn()}<h2>Shop Settings</h2></div><form class="ed" id="sf">
     ${f.map(([k, l, ta]) => `<label>${l}${ta ? `<textarea name="${k}" rows="3">${esc(S[k])}</textarea>` : `<input name="${k}" value="${esc(S[k])}">`}</label>`).join('')}
     <button class="btn primary">Save settings</button>
@@ -297,6 +305,105 @@ async function settings(bar) {
     S = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(Object.fromEntries(new FormData(e.target))) });
     $('#shopName').textContent = S.shop_name; toast('Saved'); };
 }
+
+// ---------- hunts admin ----------
+const fmtD = (a, b) => { const o = { month: 'short', day: 'numeric' }, d1 = new Date(a + 'T12:00:00');
+  if (!b || b === a) return d1.toLocaleDateString('en-US', { weekday: 'short', ...o, year: 'numeric' });
+  const d2 = new Date(b + 'T12:00:00'); return d1.toLocaleDateString('en-US', o) + ' – ' + d2.toLocaleDateString('en-US', { ...o, year: 'numeric' }); };
+let HUNTS = [];
+async function huntsAdmin(bar) {
+  HUNTS = await api('/api/admin/hunts');
+  const today = new Date().toISOString().slice(0, 10);
+  $('#app').innerHTML = bar + `<div class="crumb">${backBtn()}<h2>Hunts & Dates</h2></div>
+    <button class="btn primary big-add" style="margin-top:0" onclick="go({tab:'hunts',edit:0})">🦌 Add a hunt</button>
+    <div class="list">${HUNTS.map(h => { const up = h.dates.filter(d => (d.end_date || d.start_date) >= today);
+      return `<div class="row-card">${h.has_photo ? `<img src="/hunt-photo/${h.id}?t=1">` : '<div class="noimg">🦌</div>'}
+      <div class="body"><div class="t">${esc(h.title)} ${h.active ? '<span class="pill available">live</span>' : '<span class="pill hidden">hidden</span>'}</div>
+      <div class="m">${esc(h.game)}${h.game ? ' · ' : ''}${h.price_cents ? money(h.price_cents) + ' ' + esc(h.price_unit) : 'no price set'}${h.deposit_cents ? ' · ' + money(h.deposit_cents) + ' deposit' : ''}</div>
+      <div class="m">${up.length ? up.map(d => `<a href="#" onclick="go({tab:'hb',status:'all',date:${d.id}});return false">${fmtD(d.start_date, d.end_date)}</a> ${d.taken}/${d.spots}${d.closed ? ' (closed)' : ''}`).join(' · ') : 'No upcoming dates'}</div>
+      <div class="acts"><button class="mini" onclick="go({tab:'hunts',edit:${h.id}})">Edit / add dates</button><a class="mini" href="/#/hunts" target="_blank">View</a></div></div></div>`; }).join('') || '<div class="empty">No hunts yet. Add one, then add the dates you have open.</div>'}</div>`;
+}
+let HE = null;
+async function huntEditor(bar, id) {
+  let h = { title: '', game: '', description: '', includes: '', price_cents: 0, price_unit: 'per hunter', deposit_cents: 0, max_party: 4, active: true, has_photo: false, dates: [] };
+  if (id) { HUNTS = await api('/api/admin/hunts'); h = HUNTS.find(x => x.id === id) || h; }
+  HE = { dates: h.dates.map(d => ({ ...d })), photo: null, remove_photo: false, has_photo: h.has_photo };
+  $('#app').innerHTML = bar + `<div class="crumb">${backBtn()}<h2>${id ? 'Edit hunt' : 'Add a hunt'}</h2></div>
+  <form class="ed" id="hf">
+    <label>Photo</label><div class="photos" id="hph"></div><input type="file" id="hfile" accept="image/*" hidden>
+    <label>Hunt name<input name="title" required value="${esc(h.title)}" placeholder="e.g. Whitetail Weekend"></label>
+    <label>Game<input name="game" value="${esc(h.game)}" placeholder="e.g. Whitetail deer, hogs, dove, quail"></label>
+    <div class="two"><label>Price ($)<input name="price" inputmode="decimal" value="${h.price_cents ? h.price_cents / 100 : ''}"></label>
+      <label>Price is<select name="price_unit">${['per hunter', 'per group', 'per day', 'per hunter / day'].map(u => `<option ${u === h.price_unit ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
+    <div class="two"><label>Deposit ($)<input name="deposit" inputmode="decimal" value="${h.deposit_cents ? h.deposit_cents / 100 : ''}" placeholder="optional"></label>
+      <label>Max hunters per booking<input name="max_party" inputmode="numeric" value="${h.max_party || 4}"></label></div>
+    <label>What's included <span class="note">(one per line)</span><textarea name="includes" rows="3" placeholder="Guide&#10;Blind or stand&#10;Lodging&#10;Meals&#10;Field dressing">${esc(h.includes)}</textarea></label>
+    <label>Description<textarea name="description" rows="4" placeholder="Acreage, terrain, what hunters can expect…">${esc(h.description)}</textarea></label>
+    <label class="check"><input type="checkbox" name="active" ${h.active ? 'checked' : ''}> Show this hunt on the site</label>
+    <h3 style="margin:18px 0 6px;font-family:'Cormorant Garamond',serif;font-size:24px">Available dates</h3>
+    <div id="hdates" class="list"></div>
+    <button type="button" class="btn" style="margin:10px 0 16px" onclick="addDate()">+ Add dates</button>
+    <div class="row"><button type="button" class="btn ghost" onclick="back()">Cancel</button><button class="btn primary" id="hsave">${id ? 'Save' : 'Add hunt'}</button></div>
+    ${id ? '<p style="margin-top:16px"><button type="button" class="mini red" id="hdel">Delete this hunt</button></p>' : ''}
+  </form>`;
+  drawHPhoto(); drawDates();
+  $('#hfile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    HE.photo = { data: await resize(f, 1600, 0.82), thumb: await resize(f, 480, 0.75) }; HE.remove_photo = false; drawHPhoto(); };
+  $('#hf').onsubmit = async e => { e.preventDefault(); syncDates();
+    const fd = new FormData(e.target), body = { ...Object.fromEntries(fd), active: fd.has('active'), dates: HE.dates, photo: HE.photo, remove_photo: HE.remove_photo };
+    if (HE.dates.some(d => !d.start_date)) return toast('Every date row needs a start date (or remove it).');
+    if (HE.dates.some(d => d.end_date && d.end_date < d.start_date)) return toast('An end date is before its start date.');
+    $('#hsave').disabled = true;
+    try { if (id) await api('/api/admin/hunts/' + id, { method: 'PUT', body: JSON.stringify(body) }); else await api('/api/admin/hunts', { method: 'POST', body: JSON.stringify(body) });
+      toast('Saved — live on the Hunts page'); go({ tab: 'hunts' }, true); } catch (er) { toast(er.message); $('#hsave').disabled = false; } };
+  if ($('#hdel')) $('#hdel').onclick = async () => { if (!confirm('Delete this hunt and all its dates? Booking requests stay in Hunt Bookings. This can\'t be undone.')) return;
+    await api('/api/admin/hunts/' + id, { method: 'DELETE' }); toast('Deleted'); go({ tab: 'hunts' }, true); };
+}
+function drawHPhoto() {
+  const src = HE.photo ? HE.photo.thumb : (HE.has_photo && !HE.remove_photo ? '/hunt-photo/' + (view.edit) + '?t=1&r=' + Date.now() : '');
+  $('#hph').innerHTML = (src ? `<div class="pt cover"><img src="${src}"><button type="button" class="x" onclick="HE.photo=null;HE.remove_photo=true;drawHPhoto()">×</button></div>` : '')
+    + `<div class="addph" onclick="$('#hfile').click()"><span style="font-size:26px">📷</span>${src ? 'Change' : 'Add photo'}</div>`;
+}
+function syncDates() { document.querySelectorAll('.drow').forEach((r, i) => { const d = HE.dates[i];
+  d.start_date = r.querySelector('[data-k=start_date]').value; d.end_date = r.querySelector('[data-k=end_date]').value;
+  d.spots = r.querySelector('[data-k=spots]').value; d.note = r.querySelector('[data-k=note]').value; d.closed = r.querySelector('[data-k=closed]').checked; }); }
+function addDate() { syncDates(); const last = HE.dates[HE.dates.length - 1]; HE.dates.push({ start_date: '', end_date: '', spots: last ? last.spots : 4, note: '', closed: false }); drawDates(); }
+function delDate(i) { syncDates(); const d = HE.dates[i];
+  if (d.taken && !confirm(`${d.taken} hunter(s) already requested these dates. Remove the dates anyway? (Their requests stay in Hunt Bookings.)`)) return;
+  HE.dates.splice(i, 1); drawDates(); }
+function drawDates() {
+  $('#hdates').innerHTML = HE.dates.map((d, i) => `<div class="row-card drow" style="display:block">
+    <div class="two"><label>Start<input type="date" data-k="start_date" value="${d.start_date || ''}"></label><label>End <span class="note">(blank = 1 day)</span><input type="date" data-k="end_date" value="${d.end_date || ''}"></label></div>
+    <div class="two"><label>Spots (hunters)<input data-k="spots" inputmode="numeric" value="${d.spots}"></label><label>Note<input data-k="note" value="${esc(d.note || '')}" placeholder="e.g. Rut — best week"></label></div>
+    <div class="acts" style="align-items:center"><label class="check" style="margin:0"><input type="checkbox" data-k="closed" ${d.closed ? 'checked' : ''}> Closed (stop bookings)</label>
+      ${d.id ? `<span class="m">${d.taken || 0} of ${d.spots} requested/booked</span>` : '<span class="m">new</span>'}
+      <button type="button" class="mini red" onclick="delDate(${i})">Remove</button></div></div>`).join('') || '<div class="note">No dates yet — tap “Add dates”.</div>';
+}
+
+async function huntBookings(bar, status, dateId) {
+  const all = await api('/api/admin/hunt-bookings');
+  const list = all.filter(b => (!dateId || b.hunt_date_id === dateId) && (status === 'all' || (status === 'open' ? ['new', 'confirmed'].includes(b.status) : b.status === status)));
+  $('#app').innerHTML = bar + `<div class="crumb">${backBtn()}<h2>Hunt Bookings</h2></div>
+    <div class="filters"><select id="bs">${[['open', 'Open (new + confirmed)'], ['new', 'New requests'], ['confirmed', 'Confirmed'], ['declined', 'Declined'], ['cancelled', 'Cancelled'], ['all', 'All']].map(([k, l]) => `<option value="${k}" ${k === status ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    ${dateId ? '<button class="mini" onclick="view.date=null;render()">All dates ×</button>' : ''}</div>
+    <div class="list">${list.map(b => { const [a, z] = (b.date_label || '').split(' to ');
+      const msg = `Hi ${b.name || ''}, this is ${S.shop_name} about your ${b.hunt_title || 'hunt'} on ${a ? fmtD(a, z) : 'your dates'}. `;
+      return `<div class="row-card"><div class="noimg">🦌</div><div class="body">
+      <div class="t">${esc(b.hunt_title || 'Hunt')} <span class="pill ${b.status === 'confirmed' ? 'available' : b.status === 'new' ? 'new' : 'hidden'}">${b.status}</span></div>
+      <div class="m"><b>${a ? fmtD(a, z) : ''}</b> · ${b.party_size} hunter${b.party_size === 1 ? '' : 's'}${b.price_cents ? ' · ' + money(b.price_cents) + ' ' + esc(b.price_unit || '') : ''}${b.deposit_cents ? ' · deposit ' + money(b.deposit_cents) : ''}</div>
+      <div class="m"><b>${esc(b.name)}</b> ${esc(b.phone)} ${esc(b.email)} · requested ${when(b.created_at)}</div>
+      ${b.message ? `<div class="m" style="color:var(--ink);margin-top:4px">“${esc(b.message)}”</div>` : ''}
+      <div class="acts">${b.phone ? `<a class="mini" href="tel:${tel(b.phone)}">Call</a><a class="mini" href="sms:${tel(b.phone)}?&body=${encodeURIComponent(msg)}">Text</a>` : ''}
+        ${b.email ? `<a class="mini" href="mailto:${esc(b.email)}?subject=${encodeURIComponent(S.shop_name + ' hunt booking')}&body=${encodeURIComponent(msg)}">Email</a>` : ''}
+        ${b.status !== 'confirmed' ? `<button class="mini" onclick="hbSet(${b.id},'confirmed')">✓ Confirm</button>` : ''}
+        ${b.status === 'new' ? `<button class="mini red" onclick="hbSet(${b.id},'declined')">Decline</button>` : ''}
+        ${b.status === 'confirmed' ? `<button class="mini red" onclick="hbSet(${b.id},'cancelled')">Cancel</button>` : ''}
+        ${['declined', 'cancelled'].includes(b.status) ? `<button class="mini red" onclick="hbDel(${b.id})">Delete</button>` : ''}</div></div></div>`; }).join('') || '<div class="empty">No bookings here.</div>'}</div>
+    <p class="note">New and confirmed requests hold spots. Declined or cancelled ones free the spots back up.</p>`;
+  $('#bs').onchange = e => { view.status = e.target.value; render(); };
+}
+async function hbSet(id, status) { await api('/api/admin/hunt-bookings/' + id, { method: 'PUT', body: JSON.stringify({ status }) }); toast('Updated'); render(); }
+async function hbDel(id) { if (!confirm('Delete this booking request?')) return; await api('/api/admin/hunt-bookings/' + id, { method: 'DELETE' }); render(); }
 
 start().catch(e => console.error(e));
 </script>
