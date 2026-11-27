@@ -9,7 +9,7 @@ Antique shop website: owner posts items with phone photos; buyers browse, **Buy 
 
 ## Build / run / ship
 - Node 20+, Express, Postgres (`pg`). No build step. `npm install` / `npm start`.
-- Env vars: `DATABASE_URL` (required), `ADMIN_PIN` (owner sign-in, default 1234 — set it!), `STRIPE_SECRET_KEY` (optional; Buy Now hidden without it), `PUBLIC_URL` (optional), `SHOP_NAME` (optional seed; real name is edited in Admin → Shop Settings).
+- Env vars: `DATABASE_URL` (required), `ADMIN_PIN` (owner sign-in; blank/unset = no PIN, admin is open), `STRIPE_SECRET_KEY` (optional; Buy Now hidden without it), `PUBLIC_URL` (optional), `SHOP_NAME` (optional seed; real name is edited in Admin → Shop Settings).
 - Tables auto-create on boot: settings, items, photos (JPEG bytes in Postgres: 1600px main + 480px thumb, resized in the browser), inquiries, orders.
 - Routes: `/` shop (hash routes `#/item/:id`, `#/about`), `/admin` owner tools, `/photo/:id[?t=1]`, `/health`.
 
@@ -19,9 +19,11 @@ Antique shop website: owner posts items with phone photos; buyers browse, **Buy 
 - If two people pay for the same piece, the second order is flagged **needs refund** in Admin → Online Sales.
 
 ## Change log
+- 2026-11-27: Owner PIN optional — blank ADMIN_PIN opens /admin with no sign-in (Steve: "No pin right now").
 - 2026-11-27: v1 built. Shop, item pages (swipe gallery, zoom), offers/questions/holds, Stripe Buy Now, admin (dashboard tiles w/ drill-down, post/edit items w/ camera photos + reorder, offers inbox with call/text/email, online sales, shop settings).
 
 ## Decisions
+- 2026-11-27: No PIN for now, no Stripe yet (Steve). Buy Now stays hidden until STRIPE_SECRET_KEY is set. Add a PIN before sharing the site widely — /admin is open to anyone who finds it.
 - 2026-11-27: Render app (Steve chose over a quick page). Checkout = both Buy Now + offers (Steve). Name "Findings at the Ranch" (Steve).
 - 2026-11-27: Photos stored in Postgres (no extra storage account needed); resized client-side to keep DB small.
 - 2026-11-27: Own repo FINDINGS-AT-THE-RANCH (Steve created it); Render MY APPS workspace, ohio.
@@ -34,5 +36,6 @@ Antique shop website: owner posts items with phone photos; buyers browse, **Buy 
 
 ## Open items
 - Steve pastes the DB's Internal Database URL into the service as DATABASE_URL (Render API doesn't expose the password).
-- Stripe key for Buy Now.
+- Stripe key for Buy Now (later, per Steve).
+- Turn the PIN back on before going public.
 - Optional: email/text alert to owner when an offer comes in; custom domain.

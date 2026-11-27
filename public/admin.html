@@ -89,9 +89,13 @@ function login() {
 $('#out').onclick = () => { TOKEN = ''; localStorage.removeItem('antq_token'); login(); };
 
 async function start() {
-  if (!TOKEN) return login();
-  $('#out').hidden = false;
+  if (!TOKEN) { // no PIN set on the server → walk straight in
+    try { const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"pin":""}' });
+      if (r.ok) { TOKEN = (await r.json()).token; localStorage.setItem('antq_token', TOKEN); } } catch (e) {}
+    if (!TOKEN) return login();
+  }
   S = await api('/api/settings');
+  $('#out').hidden = !S.pin_required;
   $('#shopName').textContent = S.shop_name;
   go({ tab: 'dash' }, true);
 }
@@ -287,7 +291,7 @@ async function settings(bar) {
   $('#app').innerHTML = bar + `<div class="crumb">${backBtn()}<h2>Shop Settings</h2></div><form class="ed" id="sf">
     ${f.map(([k, l, ta]) => `<label>${l}${ta ? `<textarea name="${k}" rows="3">${esc(S[k])}</textarea>` : `<input name="${k}" value="${esc(S[k])}">`}</label>`).join('')}
     <button class="btn primary">Save settings</button>
-    <p class="note">Buy Now (card checkout): ${S.stripe_enabled ? '✅ on' : '⛔ off — add STRIPE_SECRET_KEY in Render to turn it on'}. Admin PIN is the ADMIN_PIN setting in Render.</p></form>`;
+    <p class="note">Buy Now (card checkout): ${S.stripe_enabled ? '✅ on' : '⛔ off — add STRIPE_SECRET_KEY in Render to turn it on'}. Owner PIN: ${S.pin_required ? 'on (ADMIN_PIN in Render)' : 'off — add ADMIN_PIN in Render to require one'}.</p></form>`;
   $('#sf').onsubmit = async e => { e.preventDefault();
     S = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(Object.fromEntries(new FormData(e.target))) });
     $('#shopName').textContent = S.shop_name; toast('Saved'); };

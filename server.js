@@ -5,7 +5,7 @@ const path = require('path');
 const { Pool } = require('pg');
 
 const PORT = process.env.PORT || 3000;
-const ADMIN_PIN = process.env.ADMIN_PIN || '1234';
+const ADMIN_PIN = (process.env.ADMIN_PIN || '').trim(); // blank = no PIN (open admin)
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY || '';
 const useSSL = process.env.DATABASE_URL && !/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: useSSL ? { rejectUnauthorized: false } : false });
@@ -48,6 +48,7 @@ async function getSettings() {
   const s = { ...DEFAULT_SETTINGS };
   r.rows.forEach(x => { s[x.key] = x.value; });
   s.stripe_enabled = !!STRIPE_KEY;
+  s.pin_required = !!ADMIN_PIN;
   return s;
 }
 
@@ -56,7 +57,7 @@ app.use(express.json({ limit: '40mb' }));
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
 const token = crypto.createHash('sha256').update('antiques:' + ADMIN_PIN).digest('hex');
-const admin = (req, res, next) => (req.get('x-admin-token') === token ? next() : res.status(401).json({ error: 'Sign in again' }));
+const admin = (req, res, next) => (!ADMIN_PIN || req.get('x-admin-token') === token ? next() : res.status(401).json({ error: 'Sign in again' }));
 const wrap = fn => (req, res) => fn(req, res).catch(e => { console.error(e); res.status(500).json({ error: e.message }); });
 const clean = (v, n = 2000) => String(v ?? '').trim().slice(0, n);
 const cents = v => Math.max(0, Math.round(parseFloat(String(v ?? '0').replace(/[^0-9.]/g, '')) * 100) || 0);
@@ -160,7 +161,7 @@ app.post('/api/checkout-confirm', wrap(async (req, res) => {
 }));
 
 // ---------- admin ----------
-app.post('/api/admin/login', (req, res) => (String(req.body?.pin || '') === ADMIN_PIN ? res.json({ token }) : res.status(401).json({ error: 'Wrong PIN' })));
+app.post('/api/admin/login', (req, res) => (!ADMIN_PIN || String(req.body?.pin || '') === ADMIN_PIN ? res.json({ token }) : res.status(401).json({ error: 'Wrong PIN' })));
 
 app.get('/api/admin/summary', admin, wrap(async (req, res) => {
   const r = await q(`SELECT
